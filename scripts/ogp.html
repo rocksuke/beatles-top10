@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- OGP画像（ogp.png, 1200×630）の元データ。作り直す手順は README を参照 -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: #f7f2e8; color: #1d1a16; position: relative;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  }
+  .bar { position: absolute; left: 0; right: 0; top: 0; height: 18px; background: #b3121f; }
+  .text { position: absolute; left: 80px; top: 120px; }
+  .kicker { font-size: 34px; font-weight: 700; color: #b3121f; letter-spacing: .08em; }
+  h1 { margin: 10px 0 0; font-size: 112px; line-height: 1.08; font-weight: 800; letter-spacing: .01em; }
+  p { margin: 30px 0 0; font-size: 34px; font-weight: 600; color: #5c544a; }
+  .modes { margin-top: 26px; display: flex; gap: 16px; }
+  .modes span { border: 3px solid #1d1a16; border-radius: 999px; padding: 6px 26px; font-size: 28px; font-weight: 800; }
+  .modes span.on { background: #b3121f; border-color: #b3121f; color: #fff; }
+  /* レコード盤のモチーフ */
+  .disc { position: absolute; right: -150px; top: 75px; width: 480px; height: 480px; border-radius: 50%;
+    background: repeating-radial-gradient(circle, #1d1a16 0 5px, #2a2620 5px 7px); }
+  .disc::after { content: ""; position: absolute; inset: 165px; border-radius: 50%; background: #b3121f;
+    box-shadow: 0 0 0 4px #1d1a16; }
+  .disc i { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px; border-radius: 50%; background: #f7f2e8; z-index: 1; }
+</style>
+</head>
+<body>
+  <div class="bar"></div>
+  <div class="disc"><i></i></div>
+  <div class="text">
+    <div class="kicker">全211曲から選ぶ</div>
+    <h1>ビートルズ<br>TOP10診断</h1>
+    <p>あなたが好きな10曲と、その中のTOP3は？</p>
+    <div class="modes"><span>簡易版</span><span>詳細版</span></div>
+  </div>
+</body>
+</html>
