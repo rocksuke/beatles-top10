@@ -22,6 +22,9 @@
   var METRICS = { top10: 'TOP10入り率', top3: 'TOP3入り率', picks1: '①の選ばれ率' };
   var RANK_MODES = { all: '全体', simple: '簡易版', detailed: '詳細版' };
   var LEAVE_ACTS = ['share', 'download', 'new', 'ranking', 'home'];
+  // ユーザー名：結果画面・結果画像・投稿文に使う。この端末にだけ保存し、集計には送らない
+  var NAME_KEY = 'beatlesTop10:name';
+  var NAME_MAX = 20;
 
   var app = document.getElementById('app');
   var progressEl = document.getElementById('progress');
@@ -86,6 +89,16 @@
     return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
   }
 
+  // 制御文字・改行・書字方向の制御文字を除き、空白をまとめ、20文字（コードポイント）までにする
+  function cleanName(v) {
+    var t = String(v == null ? '' : v)
+      .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, '')
+      .replace(/\s+/g, ' ').trim();
+    return Array.from(t).slice(0, NAME_MAX).join('').trim();
+  }
+  function userName() { return state && state.name ? state.name : ''; }
+  function titleText() { return userName() + 'のビートルズTOP10'; }
+
   // 画像が読み込めない場合はプレースホルダーを見せる
   document.addEventListener('error', function (e) {
     var t = e.target;
@@ -124,6 +137,12 @@
         '<h1>ビートルズ<br>TOP10診断</h1>' +
         '<p class="lead">全' + IDS.length + '曲から、あなたが好きな<strong>10曲</strong>と、その中の<strong>TOP3</strong>を選び出します。順位は付けません。</p>' +
       '</section>' + resume +
+      '<section class="name-field">' +
+        '<label for="nameInput">ユーザー名<span class="req">必須</span></label>' +
+        '<input id="nameInput" type="text" maxlength="' + NAME_MAX + '" autocomplete="nickname" enterkeyhint="done" placeholder="例：ビートルズ好き" value="' + esc(cleanName(lsGet(NAME_KEY))) + '">' +
+        '<p class="field-error" id="nameError" hidden>ユーザー名を入力してください。</p>' +
+        '<p class="small">結果の画像と X の投稿文に表示されます（' + NAME_MAX + '文字まで）。集計には送信しません。</p>' +
+      '</section>' +
       '<section class="modes">' +
         '<button class="mode" data-act="new" data-mode="simple"><span class="mode-name">簡易版</span><span class="mode-q">約' + ESTIMATE.simple + '問</span>' +
           '<span class="mode-desc">テンポよく進む、手早い診断</span></button>' +
@@ -135,8 +154,26 @@
     window.scrollTo(0, 0);
   }
 
-  function newGame(mode) {
-    state = { mode: mode, seed: newSeed(), answers: [], key: dataKey(), sid: uuid() };
+  // スタート画面ではその場の入力欄、結果画面からは今の診断のユーザー名を使う
+  function nameForNewGame() {
+    var input = document.getElementById('nameInput');
+    if (input) return cleanName(input.value);
+    return cleanName(userName() || lsGet(NAME_KEY));
+  }
+  function requireName() {
+    var name = nameForNewGame();
+    if (name) { lsSet(NAME_KEY, name); return name; }
+    if (view !== 'start') renderStart();
+    var err = document.getElementById('nameError'), input = document.getElementById('nameInput');
+    err.hidden = false;
+    input.setAttribute('aria-invalid', 'true');
+    input.focus();
+    input.scrollIntoView({ block: 'center' });
+    return '';
+  }
+
+  function newGame(mode, name) {
+    state = { mode: mode, seed: newSeed(), answers: [], key: dataKey(), sid: uuid(), name: name };
     draft = null;
     save();
     step();
@@ -268,7 +305,7 @@
     app.innerHTML =
       '<section class="result">' +
         '<p class="badge">' + LABELS[state.mode] + 'の診断結果</p>' +
-        '<h2 class="rtitle">あなたのビートルズTOP10</h2>' +
+        '<h2 class="rtitle">' + esc(titleText()) + '</h2>' +
         '<h3 class="rsub">★ TOP3</h3><div class="top3">' + top3.map(bigCard).join('') + '</div>' +
         (rest.length ? '<h3 class="rsub">ほか' + rest.length + '曲</h3><div class="grid">' + rest.map(smallCard).join('') + '</div>' : '') +
         '<p class="small center">並び順はアルバムの発売順です。</p>' +
@@ -297,6 +334,7 @@
       document.querySelector('.preview').innerHTML = '<img src="' + img.url + '" alt="診断結果の画像" width="1080" height="1350">';
       app.querySelectorAll('[data-act=share],[data-act=download]').forEach(function (b) { b.disabled = false; });
       image.text = shareText(top3, rest, mode);
+      window.__beatlesShareText = image.text; // 動作確認用
     }).catch(function (e) {
       console.error(LOG, '結果画像を生成できませんでした', e);
       var p = document.querySelector('.preview');
@@ -407,6 +445,41 @@
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
+  // 見出し：「○○のビートルズTOP10」が1行に収まれば1行、長ければ「○○の」と「ビートルズTOP10」の2行にする
+  function fitFont(ctx, text, weight, max, min, width) {
+    var size = max;
+    ctx.font = weight + ' ' + size + 'px ' + FONT;
+    while (size > min && ctx.measureText(text).width > width) { size -= 2; ctx.font = weight + ' ' + size + 'px ' + FONT; }
+    return size;
+  }
+  function truncateToWidth(ctx, text, suffix, width) {
+    var chars = Array.from(text);
+    if (ctx.measureText(text + suffix).width <= width) return text + suffix;
+    while (chars.length > 1 && ctx.measureText(chars.join('') + '…' + suffix).width > width) chars.pop();
+    return chars.join('') + '…' + suffix;
+  }
+  function drawBadge(ctx, label, x, y) {
+    ctx.font = '700 30px ' + FONT;
+    var lw = ctx.measureText(label).width + 40;
+    ctx.fillStyle = '#b3121f'; roundRect(ctx, x, y, lw, 50, 25); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(label, x + 20, y + 36);
+  }
+  function drawTitle(ctx, name, label) {
+    var maxW = W - 120, full = name + 'のビートルズTOP10';
+    var size = fitFont(ctx, full, '800', 66, 52, maxW);
+    if (ctx.measureText(full).width <= maxW) {
+      ctx.fillText(full, 60, 125);
+      drawBadge(ctx, label, 60, 152);
+      return;
+    }
+    fitFont(ctx, name + 'の', '800', 50, 36, maxW);
+    ctx.fillText(truncateToWidth(ctx, name, 'の', maxW), 60, 92);
+    ctx.font = '800 62px ' + FONT;
+    ctx.fillStyle = '#1d1a16';
+    ctx.fillText('ビートルズTOP10', 60, 165);
+    drawBadge(ctx, label, 60 + ctx.measureText('ビートルズTOP10').width + 24, 122);
+  }
+
   function draw(top3, rest, mode, imgs) {
     var c = document.createElement('canvas');
     c.width = W; c.height = H;
@@ -416,12 +489,7 @@
 
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     ctx.fillStyle = '#1d1a16';
-    ctx.font = '800 66px ' + FONT;
-    ctx.fillText('私のビートルズTOP10', 60, 125);
-    ctx.font = '700 30px ' + FONT;
-    var label = LABELS[mode], lw = ctx.measureText(label).width + 40;
-    ctx.fillStyle = '#b3121f'; roundRect(ctx, 60, 152, lw, 50, 25); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.fillText(label, 80, 188);
+    drawTitle(ctx, userName(), LABELS[mode]);
 
     ctx.fillStyle = '#b3121f'; ctx.font = '800 36px ' + FONT;
     ctx.fillText('★ TOP3', 60, 270);
@@ -489,7 +557,7 @@
   }
 
   function shareText(top3, rest, mode) {
-    var head = ['私のビートルズTOP10（' + LABELS[mode] + '）', '★TOP3'].concat(top3.map(function (id) { return '・' + SONG[id].title; }));
+    var head = [titleText() + '（' + LABELS[mode] + '）', '★TOP3'].concat(top3.map(function (id) { return '・' + SONG[id].title; }));
     var tail = [HASHTAG, siteUrl()];
     var full = head.concat(rest.length ? ['★ほか' + rest.length + '曲'].concat(rest.map(function (id) { return '・' + SONG[id].title; })) : [], tail).join('\n');
     if (tweetLength(full) <= 280) return full;
@@ -735,11 +803,23 @@
     var act = b.dataset.act;
     // 結果画面での操作（共有・保存・次の診断・ランキング）をきっかけに送信する
     if (view === 'result' && LEAVE_ACTS.indexOf(act) >= 0) flushSubmit('action');
-    if (act === 'new') { if (state) clearSaved(); newGame(b.dataset.mode); }
+    if (act === 'new') {
+      var name = requireName();
+      if (!name) return;
+      if (state) clearSaved();
+      newGame(b.dataset.mode, name);
+    }
     else if (act === 'resume') {
-      state = load();
-      if (state && !state.sid) { state.sid = uuid(); save(); }
-      if (state) step(); else renderStart();
+      var saved = load();
+      if (!saved) { renderStart(); return; }
+      // 前回の診断にユーザー名が無い（この機能を追加する前の保存データ）場合は入力欄の値を使う
+      var nm = cleanName(saved.name) || requireName();
+      if (!nm) return;
+      state = saved;
+      state.name = nm;
+      if (!state.sid) state.sid = uuid();
+      save();
+      step();
     }
     else if (act === 'discard') { clearSaved(); state = null; renderStart(); }
     else if (act === 'back') back();
@@ -753,6 +833,12 @@
     else if (act === 'rkmode' && RANK_MODES[b.dataset.v]) { rankView.mode = b.dataset.v; drawRanking(); }
   });
 
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'nameInput') {
+      document.getElementById('nameError').hidden = true;
+      e.target.removeAttribute('aria-invalid');
+    }
+  });
   document.addEventListener('change', function (e) {
     if (e.target && e.target.id === 'optin') lsSet(OPTIN_KEY, e.target.checked ? '1' : '0');
   });
